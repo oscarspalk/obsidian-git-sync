@@ -9,6 +9,12 @@ type ServerFile = {
 	content: string;
 	sha: string;
 }
+
+type ClientFile = {
+	path: string;
+	content: ArrayBuffer;
+}
+
 interface GitSyncSettings {
 	repo: string;
 	access_token: string;
@@ -89,7 +95,22 @@ export default class GitSync extends Plugin {
 		await this.app.vault.adapter.writeBinary(sFile.path, Buffer.from(sFile.content, 'base64'))
 	}
 
+	async fetchAllSubFoldersAndContents(startPath: string): Promise<string[]> {
+		const thisFolderFiles: string[] = []
+
+		const thisFolder = await this.app.vault.adapter.list(startPath)
+		thisFolderFiles.push(...thisFolder.files)
+		for (const folder of thisFolder.folders) {
+			if(!folder.contains(".git") && !folder.contains("node_modules")){
+			const contents = await this.fetchAllSubFoldersAndContents(folder)
+			thisFolderFiles.push(...contents)
+			}
+		}
+		return thisFolderFiles
+	}
+
 	async synchronize() {
+		const obsidianFiles = await this.fetchAllSubFoldersAndContents(".obsidian");
 		const files = this.app.vault.getFiles();
 		const settings = this.settings;
 		const token = settings.access_token
@@ -126,19 +147,31 @@ export default class GitSync extends Plugin {
 			new Notice("Repository was empty, initialized it.")
 		}
 
-		const clientFiles: any[] = []
+		const clientFiles: ClientFile[] = []
+
+		// load obsidian files
+		for(let index = 0; index < obsidianFiles.length; index++){
+			let thisFile = obsidianFiles[index]
+			const fileData = await this.app.vault.adapter.readBinary(thisFile);
+			const thisClientFile = {
+				path: thisFile,
+				content: fileData
+			}
+			clientFiles.push(thisClientFile)
+		}
 
 		for (let index = 0; index < files.length; index++) {
 			const file = files[index]
 			const fileData = await this.app.vault.adapter.readBinary(file.path);
-			// @ts-ignore
-			file.content = fileData;
-			clientFiles.push(file)
+			const thisFile = {
+				...file,
+				content: fileData
+			}
+			clientFiles.push(thisFile)
 		}
 		let identicals = 0;
 		for (let index = 0; index < clientFiles.length; index++) {
 			const file = clientFiles[index]
-			// @ts-ignore
 			const serverFile = serverFiles.find(sFile => sFile.path === file.path);
 			if (!serverFile) {
 				await octokit.request('PUT /repos/{owner}/{repo}/contents/{path}', {
@@ -154,8 +187,7 @@ export default class GitSync extends Plugin {
 
 				})
 			}
-			// @ts-ignore
-			else if (file.content === serverFile.content) {
+			else if (Buffer.from(file.content).toString('utf-8') === serverFile.content) {
 				identicals++;
 			}
 			else {
@@ -205,14 +237,6 @@ export default class GitSync extends Plugin {
 
 	async onload() {
 		await this.loadSettings();
-
-		// This creates an icon in the left ribbon.
-		const ribbonIconEl = this.addRibbonIcon('dice', 'Sample Plugin', (evt: MouseEvent) => {
-			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
-		});
-		// Perform additional things with the ribbon
-		ribbonIconEl.addClass('my-plugin-ribbon-class');
 
 		// This adds a simple command that can be triggered anywhere
 		this.addCommand({
