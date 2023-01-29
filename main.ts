@@ -1,16 +1,14 @@
 import { Octokit } from '@octokit/core';
 import { DangerModal } from 'modal';
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
+import { App, Notice, Plugin, PluginSettingTab, Setting, TFile } from 'obsidian';
 import { createFileAndFolders, fetchAllSubFoldersAndContents } from 'services';
 import { ClientFile, GithubFile, SavedServerFile, ServerFile } from 'types';
-
 
 interface GitSyncSettings {
 	repo: string;
 	access_token: string;
 	username: string;
 	files: SavedServerFile[];
-	lastTime: number;
 }
 
 const DEFAULT_SETTINGS: GitSyncSettings = {
@@ -18,13 +16,12 @@ const DEFAULT_SETTINGS: GitSyncSettings = {
 	access_token: '',
 	username: '',
 	files: [],
-	lastTime: Date.now()
 }
 
 export default class GitSync extends Plugin {
 	settings: GitSyncSettings;
 
-	async clearFiles(){
+	async clearFiles() {
 		this.settings.files = [];
 		await this.saveSettings();
 	}
@@ -59,11 +56,11 @@ export default class GitSync extends Plugin {
 					else {
 						const data = (await octokit.request(maybeFile.url)).data;
 						const sFile = { path: maybeFile.path, content: Buffer.from(data.content, "base64").toString('utf-8'), sha: data.sha }
-						if(savedTwin != -1){
+						if (savedTwin != -1) {
 							this.settings.files[savedTwin] = sFile;
 						}
 						else {
-						this.settings.files.push(sFile)
+							this.settings.files.push(sFile)
 						}
 						serverFiles.push(sFile)
 					}
@@ -74,7 +71,7 @@ export default class GitSync extends Plugin {
 
 			for (let index = 0; index < serverFiles.length; index++) {
 				const sFile = serverFiles[index]
-				await createFileAndFolders(sFile, this.app.vault.adapter);
+				await createFileAndFolders(sFile, this.app.vault);
 			}
 			new Notice("Pulled files from server.")
 		}
@@ -96,7 +93,7 @@ export default class GitSync extends Plugin {
 			owner: settings.username,
 			repo: settings.repo
 		})
-		
+
 		const serverFiles: ServerFile[] = []
 
 		try {
@@ -115,11 +112,11 @@ export default class GitSync extends Plugin {
 					else {
 						const data = (await octokit.request(maybeFile.url)).data;
 						const sFile = { path: maybeFile.path, content: Buffer.from(data.content, "base64").toString('utf-8'), sha: data.sha }
-						if(savedTwin != -1){
+						if (savedTwin != -1) {
 							this.settings.files[savedTwin] = sFile;
 						}
 						else {
-						this.settings.files.push(sFile)
+							this.settings.files.push(sFile)
 						}
 						serverFiles.push(sFile)
 					}
@@ -138,17 +135,20 @@ export default class GitSync extends Plugin {
 		// load obsidian files
 		for (let index = 0; index < obsidianFiles.length; index++) {
 			let thisFile = obsidianFiles[index]
-			const fileData = await this.app.vault.adapter.readBinary(thisFile);
-			const thisClientFile = {
-				path: thisFile,
-				content: fileData
+			const fil = this.app.vault.getAbstractFileByPath(thisFile)
+			if (fil instanceof TFile) {
+				const fileData = await this.app.vault.readBinary(fil)
+				const thisClientFile = {
+					path: thisFile,
+					content: fileData
+				}
+				clientFiles.push(thisClientFile)
 			}
-			clientFiles.push(thisClientFile)
 		}
 
 		for (let index = 0; index < files.length; index++) {
 			const file = files[index]
-			const fileData = await this.app.vault.adapter.readBinary(file.path);
+			const fileData = await this.app.vault.readBinary(this.app.vault.getAbstractFileByPath(file.path) as TFile)
 			const thisFile = {
 				...file,
 				content: fileData
@@ -242,7 +242,7 @@ export default class GitSync extends Plugin {
 			}
 		})
 
-		this.addSettingTab(new SampleSettingTab(this.app, this));
+		this.addSettingTab(new GitSyncSettingTab(this.app, this));
 	}
 
 	onunload() {
@@ -258,7 +258,7 @@ export default class GitSync extends Plugin {
 	}
 }
 
-class SampleSettingTab extends PluginSettingTab {
+class GitSyncSettingTab extends PluginSettingTab {
 	plugin: GitSync;
 
 	constructor(app: App, plugin: GitSync) {

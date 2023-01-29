@@ -1,13 +1,14 @@
-import { DataAdapter } from "obsidian";
+import { DataAdapter, Vault } from "obsidian";
 import * as path from "path";
 import { ServerFile } from "types";
 
 
-async function createFileAndFolders(sFile: ServerFile, adapter: DataAdapter) {
+async function createFileAndFolders(sFile: ServerFile, vault: Vault) {
     const foldersToBeCreated = sFile.path.split("/");
     foldersToBeCreated.splice(foldersToBeCreated.length - 1, 1);
-    await adapter.mkdir(path.join(...foldersToBeCreated))
-    await adapter.writeBinary(sFile.path, Buffer.from(sFile.content, 'base64'))
+    
+    await vault.createFolder(path.join(...foldersToBeCreated))
+    await vault.createBinary(sFile.path, Buffer.from(sFile.content, 'base64'))
 }
 
 async function fetchAllSubFoldersAndContents(startPath: string, adapter: DataAdapter): Promise<string[]> {
