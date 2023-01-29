@@ -24,6 +24,11 @@ const DEFAULT_SETTINGS: GitSyncSettings = {
 export default class GitSync extends Plugin {
 	settings: GitSyncSettings;
 
+	async clearFiles(){
+		this.settings.files = [];
+		await this.saveSettings();
+	}
+
 	async pull() {
 		const settings = this.settings;
 		const token = settings.access_token
@@ -47,17 +52,24 @@ export default class GitSync extends Plugin {
 			for (let index = 0; index < tree.data.tree.length; index++) {
 				const maybeFile = tree.data.tree[index]
 				if (maybeFile.type === "blob") {
-					const savedTwin = this.settings.files.find(file => file.sha === maybeFile.sha);
-					if (!savedTwin) {
-						const data = (await octokit.request(maybeFile.url)).data;
-						const sFile = { path: maybeFile.path, content: data.content, sha: data.sha }
-						this.settings.files.push(sFile)
-						serverFiles.push(sFile)
+					const savedTwin = this.settings.files.findIndex((savedFile, index) => savedFile.path === maybeFile.path)
+					if (savedTwin != -1 && this.settings.files[savedTwin].sha === maybeFile.sha) {
+						serverFiles.push(this.settings.files[savedTwin])
 					}
 					else {
-						serverFiles.push(savedTwin)
+						const data = (await octokit.request(maybeFile.url)).data;
+						const sFile = { path: maybeFile.path, content: Buffer.from(data.content, "base64").toString('utf-8'), sha: data.sha }
+						if(savedTwin != -1){
+							this.settings.files[savedTwin] = sFile;
+						}
+						else {
+						this.settings.files.push(sFile)
+						}
+						serverFiles.push(sFile)
 					}
+
 				}
+				await this.saveSettings();
 			}
 
 			for (let index = 0; index < serverFiles.length; index++) {
@@ -97,13 +109,18 @@ export default class GitSync extends Plugin {
 				const maybeFile: GithubFile = tree.data.tree[index]
 				if (maybeFile.type === "blob") {
 					const savedTwin = this.settings.files.findIndex((savedFile, index) => savedFile.path === maybeFile.path)
-					if (savedTwin != -1) {
+					if (savedTwin != -1 && this.settings.files[savedTwin].sha === maybeFile.sha) {
 						serverFiles.push(this.settings.files[savedTwin])
 					}
 					else {
 						const data = (await octokit.request(maybeFile.url)).data;
 						const sFile = { path: maybeFile.path, content: Buffer.from(data.content, "base64").toString('utf-8'), sha: data.sha }
+						if(savedTwin != -1){
+							this.settings.files[savedTwin] = sFile;
+						}
+						else {
 						this.settings.files.push(sFile)
+						}
 						serverFiles.push(sFile)
 					}
 
@@ -216,6 +233,14 @@ export default class GitSync extends Plugin {
 				}, "Pulling will overwrite duplicates locally, are you sure you want to pull?").open()
 			}
 		});
+
+		this.addCommand({
+			id: 'clear-files',
+			name: 'Clear Files',
+			callback: async () => {
+				await this.clearFiles();
+			}
+		})
 
 		this.addSettingTab(new SampleSettingTab(this.app, this));
 	}
