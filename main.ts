@@ -22,6 +22,7 @@ export default class GitSync extends Plugin {
 	settings: GitSyncSettings;
 
 	async clearFiles() {
+		console.log(this.settings.files)
 		this.settings.files = [];
 		await this.saveSettings();
 	}
@@ -51,11 +52,11 @@ export default class GitSync extends Plugin {
 				if (maybeFile.type === "blob") {
 					const savedTwin = this.settings.files.findIndex((savedFile, index) => savedFile.path === maybeFile.path)
 					if (savedTwin != -1 && this.settings.files[savedTwin].sha === maybeFile.sha) {
-						serverFiles.push(this.settings.files[savedTwin])
+						// dont update
 					}
 					else {
 						const data = (await octokit.request(maybeFile.url)).data;
-						const sFile = { path: maybeFile.path, content: Buffer.from(data.content, "base64").toString('utf-8'), sha: data.sha }
+						const sFile = { path: maybeFile.path, content: data.content, sha: data.sha }
 						if (savedTwin != -1) {
 							this.settings.files[savedTwin] = sFile;
 						}
@@ -106,13 +107,13 @@ export default class GitSync extends Plugin {
 			for (let index = 0; index < tree.data.tree.length; index++) {
 				const maybeFile: GithubFile = tree.data.tree[index]
 				if (maybeFile.type === "blob") {
-					const savedTwin = this.settings.files.findIndex((savedFile, index) => savedFile.path === maybeFile.path)
+					const savedTwin = this.settings.files.findIndex((savedFile) => savedFile.path === maybeFile.path)
 					if (savedTwin != -1 && this.settings.files[savedTwin].sha === maybeFile.sha) {
 						serverFiles.push(this.settings.files[savedTwin])
 					}
 					else {
 						const data = (await octokit.request(maybeFile.url)).data;
-						const sFile = { path: maybeFile.path, content: Buffer.from(data.content, "base64").toString('utf-8'), sha: data.sha }
+						const sFile = { path: maybeFile.path, content: data.content, sha: data.sha }
 						if (savedTwin != -1) {
 							this.settings.files[savedTwin] = sFile;
 						}
@@ -136,15 +137,12 @@ export default class GitSync extends Plugin {
 		// load obsidian files
 		for (let index = 0; index < obsidianFiles.length; index++) {
 			let thisFile = obsidianFiles[index]
-			const fil = this.app.vault.getAbstractFileByPath(thisFile)
-			if (fil instanceof TFile) {
-				const fileData = await this.app.vault.readBinary(fil)
-				const thisClientFile = {
-					path: thisFile,
-					content: fileData
-				}
-				clientFiles.push(thisClientFile)
+			const fileData = await this.app.vault.adapter.readBinary(thisFile)
+			const thisClientFile = {
+				path: thisFile,
+				content: fileData
 			}
+			clientFiles.push(thisClientFile)
 		}
 
 		for (let index = 0; index < files.length; index++) {
@@ -170,7 +168,7 @@ export default class GitSync extends Plugin {
 
 				})
 			}
-			else if (Buffer.from(file.content).toString('utf-8') === serverFile.content) {
+			else if (Buffer.from(file.content).toString('utf-8') === Buffer.from(serverFile.content, 'base64').toString('utf-8')) {
 				identicals++;
 			}
 			else {
@@ -199,7 +197,10 @@ export default class GitSync extends Plugin {
 					message: `Deleted file: ${sFile.path}`,
 					sha: sFile.sha,
 				})
+				const at = this.settings.files.findIndex((savedFile) => savedFile.path === sFile.path)
+				this.settings.files.splice(at, 1);
 			}
+			await this.saveSettings();
 		}
 
 		if (identicals === clientFiles.length && serverFiles.length === 0) {

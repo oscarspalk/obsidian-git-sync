@@ -1,4 +1,4 @@
-import { DataAdapter, Vault } from "obsidian";
+import { DataAdapter } from "obsidian";
 import * as path from "path";
 import { ServerFile } from "types";
 
@@ -15,7 +15,7 @@ async function fetchAllSubFoldersAndContents(startPath: string, adapter: DataAda
     const thisFolder = await adapter.list(startPath)
     thisFolderFiles.push(...thisFolder.files)
     for (const folder of thisFolder.folders) {
-        if (!folder.contains(".git") && !folder.contains("node_modules") && !folder.contains('git-sync')) {
+        if (!folder.contains(".git") && !folder.contains("node_modules")) {
             const contents = await fetchAllSubFoldersAndContents(folder, adapter)
             thisFolderFiles.push(...contents)
         }
