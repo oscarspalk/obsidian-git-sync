@@ -71,11 +71,12 @@ export default class GitSync extends Plugin {
 
 			for (let index = 0; index < serverFiles.length; index++) {
 				const sFile = serverFiles[index]
-				await createFileAndFolders(sFile, this.app.vault);
+				await createFileAndFolders(sFile, this.app.vault.adapter);
 			}
 			new Notice("Pulled files from server.")
 		}
 		catch (e) {
+			console.log(e)
 			new Notice("Error, source repository is probably empty.")
 		}
 	}

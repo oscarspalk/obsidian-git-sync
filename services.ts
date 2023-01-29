@@ -3,12 +3,11 @@ import * as path from "path";
 import { ServerFile } from "types";
 
 
-async function createFileAndFolders(sFile: ServerFile, vault: Vault) {
+async function createFileAndFolders(sFile: ServerFile, adapter: DataAdapter) {
     const foldersToBeCreated = sFile.path.split("/");
     foldersToBeCreated.splice(foldersToBeCreated.length - 1, 1);
-    
-    await vault.createFolder(path.join(...foldersToBeCreated))
-    await vault.createBinary(sFile.path, Buffer.from(sFile.content, 'base64'))
+    await adapter.mkdir(path.join(...foldersToBeCreated))
+    await adapter.writeBinary(sFile.path, Buffer.from(sFile.content, 'base64'))
 }
 
 async function fetchAllSubFoldersAndContents(startPath: string, adapter: DataAdapter): Promise<string[]> {
