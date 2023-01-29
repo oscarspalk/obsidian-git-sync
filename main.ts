@@ -1,48 +1,28 @@
 import { Octokit } from '@octokit/core';
 import { DangerModal } from 'modal';
 import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
-import * as path from 'path';
+import { createFileAndFolders, fetchAllSubFoldersAndContents } from 'services';
+import { ClientFile, GithubFile, SavedServerFile, ServerFile } from 'types';
 
-// Remember to rename these classes and interfaces!
-type ServerFile = {
-	path: string;
-	content: string;
-	sha: string;
-}
-
-type ClientFile = {
-	path: string;
-	content: ArrayBuffer;
-}
 
 interface GitSyncSettings {
 	repo: string;
 	access_token: string;
 	username: string;
+	files: SavedServerFile[];
+	lastTime: number;
 }
 
 const DEFAULT_SETTINGS: GitSyncSettings = {
 	repo: '',
 	access_token: '',
-	username: ''
+	username: '',
+	files: [],
+	lastTime: Date.now()
 }
 
 export default class GitSync extends Plugin {
 	settings: GitSyncSettings;
-
-	async getCommits() {
-		const settings = this.settings;
-		const token = settings.access_token
-		const octokit = new Octokit({
-			auth: token
-		})
-		const commits = await octokit.request('GET /repos/{owner}/{repo}/commits{?sha,path,author,since,until,per_page,page}', {
-			owner: settings.username,
-			repo: settings.repo
-		})
-
-		console.log(commits)
-	}
 
 	async pull() {
 		const settings = this.settings;
@@ -67,50 +47,32 @@ export default class GitSync extends Plugin {
 			for (let index = 0; index < tree.data.tree.length; index++) {
 				const maybeFile = tree.data.tree[index]
 				if (maybeFile.type === "blob") {
-					const data = (await octokit.request(maybeFile.url)).data;
-					const sFile = { path: maybeFile.path, content: data.content, sha: data.sha }
-					serverFiles.push(sFile)
+					const savedTwin = this.settings.files.find(file => file.sha === maybeFile.sha);
+					if (!savedTwin) {
+						const data = (await octokit.request(maybeFile.url)).data;
+						const sFile = { path: maybeFile.path, content: data.content, sha: data.sha }
+						this.settings.files.push(sFile)
+						serverFiles.push(sFile)
+					}
+					else {
+						serverFiles.push(savedTwin)
+					}
 				}
 			}
 
 			for (let index = 0; index < serverFiles.length; index++) {
 				const sFile = serverFiles[index]
-				await this.createFileAndFolders(sFile);
+				await createFileAndFolders(sFile, this.app.vault.adapter);
 			}
 			new Notice("Pulled files from server.")
 		}
-
-
-
 		catch (e) {
 			new Notice("Error, source repository is probably empty.")
 		}
-
-	}
-
-	async createFileAndFolders(sFile: ServerFile) {
-		const foldersToBeCreated = sFile.path.split("/");
-		foldersToBeCreated.splice(foldersToBeCreated.length - 1, 1);
-		await this.app.vault.adapter.mkdir(path.join(...foldersToBeCreated))
-		await this.app.vault.adapter.writeBinary(sFile.path, Buffer.from(sFile.content, 'base64'))
-	}
-
-	async fetchAllSubFoldersAndContents(startPath: string): Promise<string[]> {
-		const thisFolderFiles: string[] = []
-
-		const thisFolder = await this.app.vault.adapter.list(startPath)
-		thisFolderFiles.push(...thisFolder.files)
-		for (const folder of thisFolder.folders) {
-			if(!folder.contains(".git") && !folder.contains("node_modules")){
-			const contents = await this.fetchAllSubFoldersAndContents(folder)
-			thisFolderFiles.push(...contents)
-			}
-		}
-		return thisFolderFiles
 	}
 
 	async synchronize() {
-		const obsidianFiles = await this.fetchAllSubFoldersAndContents(".obsidian");
+		const obsidianFiles = await fetchAllSubFoldersAndContents(".obsidian", this.app.vault.adapter);
 		const files = this.app.vault.getFiles();
 		const settings = this.settings;
 		const token = settings.access_token
@@ -122,24 +84,31 @@ export default class GitSync extends Plugin {
 			owner: settings.username,
 			repo: settings.repo
 		})
-
+		
 		const serverFiles: ServerFile[] = []
 
 		try {
-
 			const tree = await octokit.request('GET /repos/{owner}/{repo}/git/trees/{tree_sha}?recursive=true', {
 				owner: settings.username,
 				repo: settings.repo,
 				tree_sha: commits.data[0].sha,
 			})
-
 			for (let index = 0; index < tree.data.tree.length; index++) {
-				const maybeFile = tree.data.tree[index]
+				const maybeFile: GithubFile = tree.data.tree[index]
 				if (maybeFile.type === "blob") {
-					const data = (await octokit.request(maybeFile.url)).data;
-					const sFile = { path: maybeFile.path, content: Buffer.from(data.content, "base64").toString('utf-8'), sha: data.sha }
-					serverFiles.push(sFile)
+					const savedTwin = this.settings.files.findIndex((savedFile, index) => savedFile.path === maybeFile.path)
+					if (savedTwin != -1) {
+						serverFiles.push(this.settings.files[savedTwin])
+					}
+					else {
+						const data = (await octokit.request(maybeFile.url)).data;
+						const sFile = { path: maybeFile.path, content: Buffer.from(data.content, "base64").toString('utf-8'), sha: data.sha }
+						this.settings.files.push(sFile)
+						serverFiles.push(sFile)
+					}
+
 				}
+				await this.saveSettings();
 			}
 		}
 		catch (e) {
@@ -150,7 +119,7 @@ export default class GitSync extends Plugin {
 		const clientFiles: ClientFile[] = []
 
 		// load obsidian files
-		for(let index = 0; index < obsidianFiles.length; index++){
+		for (let index = 0; index < obsidianFiles.length; index++) {
 			let thisFile = obsidianFiles[index]
 			const fileData = await this.app.vault.adapter.readBinary(thisFile);
 			const thisClientFile = {
@@ -179,10 +148,6 @@ export default class GitSync extends Plugin {
 					repo: settings.repo,
 					path: file.path,
 					message: `Created file: ${file.path}`,
-					committer: {
-						name: 'Obs Bot',
-						email: 'obsbot@oscarspalk.com'
-					},
 					content: Buffer.from(file.content).toString('base64'),
 
 				})
@@ -196,10 +161,6 @@ export default class GitSync extends Plugin {
 					repo: settings.repo,
 					path: file.path,
 					message: `Updated file: ${file.path}`,
-					committer: {
-						name: 'Obs Bot',
-						email: 'obsbot@oscarspalk.com'
-					},
 					content: Buffer.from(file.content).toString('base64'),
 					sha: serverFile.sha,
 				})
@@ -218,10 +179,6 @@ export default class GitSync extends Plugin {
 					repo: settings.repo,
 					path: sFile.path,
 					message: `Deleted file: ${sFile.path}`,
-					committer: {
-						name: 'Obs Bot',
-						email: 'obsbot@oscarspalk.com'
-					},
 					sha: sFile.sha,
 				})
 			}
@@ -233,12 +190,12 @@ export default class GitSync extends Plugin {
 		else {
 			new Notice("Uploading new files to the server 😒")
 		}
+
 	}
 
 	async onload() {
 		await this.loadSettings();
 
-		// This adds a simple command that can be triggered anywhere
 		this.addCommand({
 			id: 'push-git',
 			name: 'Git Push',
@@ -260,15 +217,6 @@ export default class GitSync extends Plugin {
 			}
 		});
 
-		this.addCommand({
-			id: 'commits-git',
-			name: 'Git Commits',
-
-			callback: async () => {
-				await this.getCommits();
-			}
-		});
-		// This adds a settings tab so the user can configure various aspects of the plugin
 		this.addSettingTab(new SampleSettingTab(this.app, this));
 	}
 
