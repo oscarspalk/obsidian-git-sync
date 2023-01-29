@@ -274,10 +274,10 @@ class SampleSettingTab extends PluginSettingTab {
 		containerEl.createEl('h2', { text: 'Git Sync' });
 
 		new Setting(containerEl)
-			.setName('Github Repository URL')
+			.setName('Github Repository Name')
 			.setDesc('Your repository')
 			.addText(text => text
-				.setPlaceholder('Enter your url')
+				.setPlaceholder('Enter your repos name')
 				.setValue(this.plugin.settings.repo)
 				.onChange(async (value) => {
 					this.plugin.settings.repo = value;
