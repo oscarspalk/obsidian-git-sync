@@ -1,12 +1,10 @@
 {
 	"id": "git-sync",
 	"name": "Git Sync",
-	"version": "1.0.6",
+	"version": "1.0.7",
 	"minAppVersion": "0.15.0",
 	"description": "Sync your vault with Github.",
 	"author": "oscarspalk",
 	"authorUrl": "https://oscarspalk.com",
-	"fundingUrl": "https://obsidian.md/pricing",
-	"isDesktopOnly": true
-	
+	"isDesktopOnly": true	
 }
