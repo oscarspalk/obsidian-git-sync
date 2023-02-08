@@ -15,7 +15,7 @@ async function fetchAllSubFoldersAndContents(startPath: string, adapter: DataAda
     const thisFolder = await adapter.list(startPath)
     thisFolderFiles.push(...thisFolder.files)
     for (const folder of thisFolder.folders) {
-        if (!folder.contains(".git") && !folder.contains("node_modules") && !folder.contains("git-sync")) {
+        if (!folder.contains(".git") && !folder.contains("node_modules") && !folder.contains("git-sync") && !folder.contains('obsidian-git-sync')) {
             const contents = await fetchAllSubFoldersAndContents(folder, adapter)
             thisFolderFiles.push(...contents)
         }
