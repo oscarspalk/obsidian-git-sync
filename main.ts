@@ -66,7 +66,6 @@ export default class GitSync extends Plugin {
 						}
 						serverFiles.push(sFile)
 					}
-
 				}
 			}
 			await this.saveSettings();
