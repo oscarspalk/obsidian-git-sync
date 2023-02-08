@@ -1,7 +1,7 @@
 {
-	"id": "git-sync-plugin",
+	"id": "git-sync",
 	"name": "Git Sync",
-	"version": "1.0.5",
+	"version": "1.0.6",
 	"minAppVersion": "0.15.0",
 	"description": "Sync your vault with Github.",
 	"author": "oscarspalk",
