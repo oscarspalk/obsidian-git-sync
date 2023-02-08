@@ -22,6 +22,4 @@ async function fetchAllSubFoldersAndContents(startPath: string, adapter: DataAda
     }
     return thisFolderFiles
 }
-
-
 export { createFileAndFolders, fetchAllSubFoldersAndContents }

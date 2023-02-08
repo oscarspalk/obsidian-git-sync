@@ -70,7 +70,7 @@ export default class GitSync extends Plugin {
 				}
 			}
 			await this.saveSettings();
-
+			//
 			for (let index = 0; index < serverFiles.length; index++) {
 				const sFile = serverFiles[index]
 				await createFileAndFolders(sFile, this.app.vault.adapter);
