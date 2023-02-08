@@ -55,6 +55,7 @@ export default class GitSync extends Plugin {
 						// dont update
 					}
 					else {
+						new Notice(`Fetched file nr. ${index+1}`)
 						const data = (await octokit.request(maybeFile.url)).data;
 						const sFile = { path: maybeFile.path, content: data.content, sha: data.sha }
 						if (savedTwin != -1) {
@@ -67,12 +68,13 @@ export default class GitSync extends Plugin {
 					}
 
 				}
-				await this.saveSettings();
 			}
+			await this.saveSettings();
 
 			for (let index = 0; index < serverFiles.length; index++) {
 				const sFile = serverFiles[index]
 				await createFileAndFolders(sFile, this.app.vault.adapter);
+				new Notice(`Wrote file nr. ${index+1}`)
 			}
 			new Notice("Pulled files from server.")
 		}
@@ -83,6 +85,7 @@ export default class GitSync extends Plugin {
 	}
 
 	async synchronize() {
+		const startTime = Date.now();
 		const obsidianFiles = await fetchAllSubFoldersAndContents(".obsidian", this.app.vault.adapter);
 		const files = this.app.vault.getFiles();
 		const settings = this.settings;
@@ -124,8 +127,8 @@ export default class GitSync extends Plugin {
 					}
 
 				}
-				await this.saveSettings();
 			}
+			await this.saveSettings();
 		}
 		catch (e) {
 			// empty repo
@@ -209,7 +212,7 @@ export default class GitSync extends Plugin {
 		else {
 			new Notice("Uploading new files to the server 😒")
 		}
-
+		new Notice(`Took ${Date.now()-startTime} ms`)
 	}
 
 	async onload() {
