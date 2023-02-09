@@ -9,5 +9,11 @@ Push all new files and pull new files with a simple in editor command. Uses the 
 
 Use either the pull or push command now!
 
+## Todo
+- Commands doesn't report status until they are finished.
+- Testing performance for large vaults.
+
 ## Issues
+- A known bug, as this plugin uses the Github API, is that if you have >1000 files, then you will throttle the API. The limit resets pr. hour, but it means that if you have never used `git-sync` before, you will have to wait some time until it is synced.
+
 You are welcome to report issues.
