@@ -1,7 +1,7 @@
 import { Octokit } from '@octokit/core';
 import { DangerModal } from 'modal';
 import { App, Notice, Plugin, PluginSettingTab, Setting, TFile } from 'obsidian';
-import { createFileAndFolders, fetchAllSubFoldersAndContents } from 'services';
+import { createBlob, createFileAndFolders, fetchAllSubFoldersAndContents } from 'services';
 import { ClientFile, GithubFile, SavedServerFile, ServerFile } from 'types';
 
 interface GitSyncSettings {
@@ -55,7 +55,7 @@ export default class GitSync extends Plugin {
 						// dont update
 					}
 					else {
-						new Notice(`Fetched file nr. ${index+1}`)
+						new Notice(`Fetched file nr. ${index + 1}`)
 						const data = (await octokit.request(maybeFile.url)).data;
 						const sFile = { path: maybeFile.path, content: data.content, sha: data.sha }
 						if (savedTwin != -1) {
@@ -69,11 +69,11 @@ export default class GitSync extends Plugin {
 				}
 			}
 			await this.saveSettings();
-			//
+
 			for (let index = 0; index < serverFiles.length; index++) {
 				const sFile = serverFiles[index]
 				await createFileAndFolders(sFile, this.app.vault.adapter);
-				new Notice(`Wrote file nr. ${index+1}`)
+				new Notice(`Wrote file nr. ${index + 1}`)
 			}
 			new Notice("Pulled files from server.")
 		}
@@ -100,39 +100,34 @@ export default class GitSync extends Plugin {
 
 		const serverFiles: ServerFile[] = []
 
-		try {
-			const tree = await octokit.request('GET /repos/{owner}/{repo}/git/trees/{tree_sha}?recursive=true', {
-				owner: settings.username,
-				repo: settings.repo,
-				tree_sha: commits.data[0].sha,
-			})
-			for (let index = 0; index < tree.data.tree.length; index++) {
-				const maybeFile: GithubFile = tree.data.tree[index]
-				if (maybeFile.type === "blob") {
-					const savedTwin = this.settings.files.findIndex((savedFile) => savedFile.path === maybeFile.path)
-					if (savedTwin != -1 && this.settings.files[savedTwin].sha === maybeFile.sha) {
-						serverFiles.push(this.settings.files[savedTwin])
+		const tree = await octokit.request('GET /repos/{owner}/{repo}/git/trees/{tree_sha}?recursive=true', {
+			owner: settings.username,
+			repo: settings.repo,
+			tree_sha: commits.data[0].sha,
+		})
+		for (let index = 0; index < tree.data.tree.length; index++) {
+			const maybeFile: GithubFile = tree.data.tree[index]
+			if (maybeFile.type === "blob") {
+				const savedTwin = this.settings.files.findIndex((savedFile) => savedFile.path === maybeFile.path)
+				if (savedTwin != -1 && this.settings.files[savedTwin].sha === maybeFile.sha) {
+					serverFiles.push(this.settings.files[savedTwin])
+				}
+				else {
+					const data = (await octokit.request(maybeFile.url)).data;
+					const sFile = { path: maybeFile.path, content: data.content, sha: data.sha }
+					if (savedTwin != -1) {
+						this.settings.files[savedTwin] = sFile;
 					}
 					else {
-						const data = (await octokit.request(maybeFile.url)).data;
-						const sFile = { path: maybeFile.path, content: data.content, sha: data.sha }
-						if (savedTwin != -1) {
-							this.settings.files[savedTwin] = sFile;
-						}
-						else {
-							this.settings.files.push(sFile)
-						}
-						serverFiles.push(sFile)
+						this.settings.files.push(sFile)
 					}
-
+					serverFiles.push(sFile)
 				}
+
 			}
-			await this.saveSettings();
 		}
-		catch (e) {
-			// empty repo
-			new Notice("Repository was empty, initialized it.")
-		}
+		await this.saveSettings();
+
 
 		const clientFiles: ClientFile[] = []
 
@@ -156,32 +151,22 @@ export default class GitSync extends Plugin {
 			}
 			clientFiles.push(thisFile)
 		}
+
+		const createAndUpdatePromises = [];
+
 		let identicals = 0;
 		for (let index = 0; index < clientFiles.length; index++) {
 			const file = clientFiles[index]
 			const serverFile = serverFiles.find(sFile => sFile.path === file.path);
 			if (!serverFile) {
-				await octokit.request('PUT /repos/{owner}/{repo}/contents/{path}', {
-					owner: settings.username,
-					repo: settings.repo,
-					path: file.path,
-					message: `Created file: ${file.path}`,
-					content: Buffer.from(file.content).toString('base64'),
-
-				})
+				createAndUpdatePromises.push(createBlob(octokit, this.settings, file))
 			}
 			else if (Buffer.from(file.content).toString('utf-8') === Buffer.from(serverFile.content, 'base64').toString('utf-8')) {
 				identicals++;
 			}
 			else {
-				await octokit.request('PUT /repos/{owner}/{repo}/contents/{path}', {
-					owner: settings.username,
-					repo: settings.repo,
-					path: file.path,
-					message: `Updated file: ${file.path}`,
-					content: Buffer.from(file.content).toString('base64'),
-					sha: serverFile.sha,
-				})
+				createAndUpdatePromises.push(createAndUpdatePromises.push(createBlob(octokit, this.settings, file))
+				)
 			}
 
 			if (serverFile) {
@@ -189,7 +174,19 @@ export default class GitSync extends Plugin {
 			}
 		}
 
-		if (serverFiles.length != 0) {
+		const createFiles = await Promise.all(createAndUpdatePromises);
+		console.log(createFiles)
+		console.log(tree.data)
+
+		octokit.request('POST /repos/{owner}/{repo}/git/trees',
+		{
+			owner: this.settings.username,
+			repo: this.settings.repo,
+			base_tree: tree.data.sha,
+			tree: createFiles
+		})
+
+		/*if (serverFiles.length != 0) {
 			for (let index = 0; index < serverFiles.length; index++) {
 				const sFile = serverFiles[index]
 				await octokit.request('DELETE /repos/{owner}/{repo}/contents/{path}', {
@@ -203,7 +200,7 @@ export default class GitSync extends Plugin {
 				this.settings.files.splice(at, 1);
 			}
 			await this.saveSettings();
-		}
+		}*/
 
 		if (identicals === clientFiles.length && serverFiles.length === 0) {
 			new Notice("Succesfully synced 👌")
@@ -211,7 +208,7 @@ export default class GitSync extends Plugin {
 		else {
 			new Notice("Uploading new files to the server 😒")
 		}
-		new Notice(`Took ${Date.now()-startTime} ms`)
+		new Notice(`Took ${Date.now() - startTime} ms`)
 	}
 
 	async onload() {

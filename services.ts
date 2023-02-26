@@ -1,6 +1,7 @@
+import { Octokit } from "@octokit/core";
 import { DataAdapter } from "obsidian";
 import * as path from "path";
-import { ServerFile } from "types";
+import { ClientFile, ServerFile } from "types";
 
 
 async function createFileAndFolders(sFile: ServerFile, adapter: DataAdapter) {
@@ -22,4 +23,20 @@ async function fetchAllSubFoldersAndContents(startPath: string, adapter: DataAda
     }
     return thisFolderFiles
 }
-export { createFileAndFolders, fetchAllSubFoldersAndContents }
+
+async function createBlob(octokit : Octokit, settings: { username: any; repo: any; }, file : ClientFile){
+    const shaAndUrl = (await octokit.request('POST /repos/{owner}/{repo}/git/blobs', {
+        owner: settings.username,
+        repo: settings.repo,
+        content: Buffer.from(file.content).toString('base64'),
+        encoding: 'base64'
+    })).data;
+    return {
+        "sha": shaAndUrl.sha,
+        "mode": "100644",
+        "path": file.path,
+        "type": "blob"
+    }
+}
+
+export { createFileAndFolders, fetchAllSubFoldersAndContents, createBlob }
